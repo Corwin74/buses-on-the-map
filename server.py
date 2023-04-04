@@ -1,8 +1,14 @@
 import json
+from functools import partial
 import trio
 from trio_websocket import serve_websocket, ConnectionClosed
 
+
+HOST = '127.0.0.1'
+LISTEN_BUSES_COORD_PORT = 8080
+
 buses = {}
+
 
 async def buses_server(request):
 
@@ -24,10 +30,18 @@ async def buses_server(request):
         except ConnectionClosed:
             break
 
+listen_buses_coord_ws = partial(
+    serve_websocket,
+    buses_server,
+    HOST,
+    LISTEN_BUSES_COORD_PORT,
+    ssl_context=None
+)
+
 
 async def main():
     async with trio.open_nursery() as nursery:
-        nursery.start_soon(serve_websocket(handler, host, port, ssl_context))
-    await serve_websocket(buses_server, '127.0.0.1', 8080, ssl_context=None)
+        nursery.start_soon(listen_buses_coord_ws)
+
 
 trio.run(main)
