@@ -2,6 +2,7 @@ import json
 import trio
 from trio_websocket import serve_websocket, ConnectionClosed
 
+buses = {}
 
 async def buses_server(request):
 
@@ -25,6 +26,8 @@ async def buses_server(request):
 
 
 async def main():
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(serve_websocket(handler, host, port, ssl_context))
     await serve_websocket(buses_server, '127.0.0.1', 8080, ssl_context=None)
 
 trio.run(main)
