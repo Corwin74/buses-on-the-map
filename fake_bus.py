@@ -1,6 +1,6 @@
 import json
 from sys import stderr
-import os    
+import os
 import trio
 from trio_websocket import open_websocket_url
 
@@ -25,7 +25,6 @@ async def send_bus_route(route):
                 }
                 await ws.send_message(json.dumps(message, ensure_ascii=True))
                 message = await ws.get_message()
-                print(message)
                 await trio.sleep(1)
     except OSError as ose:
         print('Connection attempt failed: %s' % ose, file=stderr)
