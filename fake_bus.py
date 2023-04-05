@@ -1,6 +1,8 @@
 import json
 from sys import stderr
 import os
+import random
+from itertools import cycle, islice
 import trio
 from trio_websocket import open_websocket_url
 
@@ -13,12 +15,16 @@ def load_routes(directory_path='routes'):
                 yield json.load(file)
 
 
-async def send_bus_route(route):
+async def send_bus_route(route, id):
     try:
         async with open_websocket_url('ws://127.0.0.1:8080') as ws:
-            for point in route['coordinates']:
+            route_points = route['coordinates']
+            cycle_route = cycle(route_points)
+            lenght_route = len(route_points)
+            random_start_point = random.randint(1, lenght_route)
+            for point in islice(cycle_route, random_start_point, None):
                 message = {
-                        "busId": route['name'],
+                        "busId": f"{route['name']}-{id}",
                         "lat": point[0],
                         "lng": point[1],
                         "route": route['name']
@@ -27,13 +33,14 @@ async def send_bus_route(route):
                 message = await ws.get_message()
                 await trio.sleep(1)
     except OSError as ose:
-        print('Connection attempt failed: %s' % ose, file=stderr)
+        print(f'Connection attempt failed: {ose}', file=stderr)
 
 
 async def main():
     async with trio.open_nursery() as nursery:
         for route in load_routes():
-            nursery.start_soon(send_bus_route, route)
+            for i in range(3):
+                nursery.start_soon(send_bus_route, route, i)
 
 
 trio.run(main)
