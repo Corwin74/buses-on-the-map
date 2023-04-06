@@ -46,12 +46,13 @@ async def buses_server(request):
     while True:
         try:
             message = json.loads(await web_socket.get_message())
-            bus_id = message['busId']
-            buses[bus_id] = {
-                'lat': message['lat'],
-                'lng': message['lng'],
-                'route': message['route'],
-            }
+            for bus in message:
+                bus_id = bus['busId']
+                buses[bus_id] = {
+                    'lat': bus['lat'],
+                    'lng': bus['lng'],
+                    'route': bus['route'],
+                }
             await web_socket.send_message('OK')
         except ConnectionClosed:
             break
@@ -61,7 +62,8 @@ listen_buses_coord_ws = partial(
     buses_server,
     HOST,
     LISTEN_BUSES_COORD_PORT,
-    ssl_context=None
+    ssl_context=None,
+    max_message_size=10485760,
 )
 
 listen_browsers_ws = partial(
@@ -69,14 +71,15 @@ listen_browsers_ws = partial(
     talk_to_browser,
     HOST,
     LISTEN_BROWSERS_PORT,
-    ssl_context=None
+    ssl_context=None,
+    max_message_size=10485760,
 )
 
 
 async def main():
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.INFO,
+        level=logging.DEBUG,
         datefmt='%Y-%m-%d %H:%M:%S',
     )
     async with trio.open_nursery() as nursery:
