@@ -9,7 +9,7 @@ from trio_websocket import open_websocket_url
 
 logger = logging.getLogger(__file__)
 CHANNEL_COUNT = 5
-RECEIVE_DELAY = 4.9
+RECEIVE_DELAY = 1
 
 
 def load_routes(directory_path='routes'):
@@ -33,8 +33,7 @@ async def run_bus(route, bus_id, send_channel):
                 "route": route['name']
         }
         send_channel.send_nowait(message)
-        await trio.sleep(0.05)
-    print('Oops')
+        await trio.sleep(2)
 
 
 async def send_updates(server_address, receive_channel):
@@ -42,19 +41,24 @@ async def send_updates(server_address, receive_channel):
     async with open_websocket_url(server_address) as ws:
         while True:
             try:
-                for _ in range(20000):
-                    message.append(receive_channel.receive_nowait())
-                logger.debug("Got 20000!")
+                with trio.move_on_after(1):
+                    count = 0
+                    while True:
+                        value = receive_channel.receive_nowait()
+                        message.append(value)
+                        count += 1
+                        await trio.sleep(0)
                 await ws.send_message(
                     json.dumps(message, ensure_ascii=True)
                 )
+                logger.debug('%s items send', count)
                 message = []
             except trio.WouldBlock:
-                print(f'Flush {len(message)}')
-                await trio.sleep(RECEIVE_DELAY)
+                logger.debug('Dry channel at %s', count)
                 await ws.send_message(
                     json.dumps(message, ensure_ascii=True)
                 )
+                await trio.sleep(RECEIVE_DELAY)
                 message = []
 
 
@@ -73,7 +77,7 @@ async def main():
             receive_channels.append(receive_channel)
             nursery.start_soon(send_updates, 'ws://127.0.0.1:8080', receive_channel)
         for route in load_routes():
-            for bus_id in range(50):
+            for bus_id in range(35):
                 nursery.start_soon(
                     run_bus,
                     route,
