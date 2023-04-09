@@ -3,13 +3,16 @@ import logging
 import os
 import random
 from itertools import cycle, islice
+import configargparse
+import dotenv
 import trio
 from trio_websocket import open_websocket_url
 
 
 logger = logging.getLogger(__file__)
-CHANNEL_COUNT = 5
-RECEIVE_DELAY = 1
+READ_CHANNEL_DELAY = 1
+SEND_BUS_COORD_DELAY = 2
+CHANNEL_BUFFER_SIZE = 400000
 
 
 def load_routes(directory_path='routes'):
@@ -33,7 +36,7 @@ async def run_bus(route, bus_id, send_channel):
                 "route": route['name']
         }
         send_channel.send_nowait(message)
-        await trio.sleep(2)
+        await trio.sleep(SEND_BUS_COORD_DELAY)
 
 
 async def send_updates(server_address, receive_channel):
@@ -42,46 +45,139 @@ async def send_updates(server_address, receive_channel):
         while True:
             try:
                 with trio.move_on_after(1):
-                    count = 0
+                    messages_counter = 0
                     while True:
                         value = receive_channel.receive_nowait()
                         message.append(value)
-                        count += 1
+                        messages_counter += 1
                         await trio.sleep(0)
                 await ws.send_message(
                     json.dumps(message, ensure_ascii=True)
                 )
-                logger.debug('%s items send', count)
+                logger.debug('%s items send', messages_counter)
                 message = []
             except trio.WouldBlock:
-                logger.debug('Dry channel at %s', count)
+                logger.debug('Dry channel at %s', messages_counter)
                 await ws.send_message(
                     json.dumps(message, ensure_ascii=True)
                 )
-                await trio.sleep(RECEIVE_DELAY)
+                await trio.sleep(READ_CHANNEL_DELAY)
                 message = []
 
 
 async def main():
+    dotenv.load_dotenv()
+    parser = configargparse.ArgParser()
+    parser.add(
+        '-host',
+        required=True,
+        help='host to connection',
+        env_var='HOST',
+    )
+    parser.add(
+        '-port',
+        required=True,
+        help='buses server port',
+        env_var='BUSES_SERVER_PORT',
+    )
+    parser.add(
+        '-r',
+        required=True,
+        type=int,
+        help='routes number',
+        env_var='ROUTES_NUMBER',
+        dest='routes_number',
+    )
+    parser.add(
+        '-b',
+        required=True,
+        type=int,
+        help='buses_per_route',
+        env_var='BUSES_PER_ROUTE',
+        dest='buses_per_route',
+    )
+    parser.add(
+        '-t',
+        required=False,
+        type=int,
+        help='refresh timeout',
+        env_var='REFRESH_TIMEOUT',
+        dest='refresh_timeout',
+        default=2
+    )
+    parser.add(
+        '-id',
+        required=False,
+        type=str,
+        help='emulator id',
+        env_var='EMULATOR_ID',
+        dest='emulator_id',
+        default='1',
+    )
+    parser.add(
+        '-w',
+        required=False,
+        type=int,
+        help='websockets number',
+        env_var='WEBSOCKETS_NUMBER',
+        dest='websockets_number',
+        default=5,
+    )
+    parser.add(
+        '-v',
+        required=False,
+        action='count',
+        dest='verbose',
+        default=0,
+    )
+    options = parser.parse_args()
+
+    if options.verbose == 0:
+        logging_level = logging.ERROR
+    elif options.verbose == 1:
+        logging_level = logging.WARNING
+    elif options.verbose == 2:
+        logging_level = logging.INFO
+    else:
+        logging_level = logging.DEBUG
+
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.DEBUG,
+        level=logging_level,
         datefmt='%Y-%m-%d %H:%M:%S',
     )
+    logger.setLevel(logging_level)
+
+    logger.debug(options)
+    logger.info(
+        'Host: %s, port: %s, websockets_number: %s',
+        options.host,
+        options.port,
+        options.websockets_number,
+    )
+
     async with trio.open_nursery() as nursery:
         send_channels = []
         receive_channels = []
-        for _ in range(CHANNEL_COUNT):
-            send_channel, receive_channel = trio.open_memory_channel(400000)
+        for _ in range(options.websockets_number):
+            send_channel, receive_channel = trio.open_memory_channel(
+                CHANNEL_BUFFER_SIZE,
+            )
             send_channels.append(send_channel)
             receive_channels.append(receive_channel)
-            nursery.start_soon(send_updates, 'ws://127.0.0.1:8080', receive_channel)
-        for route in load_routes():
-            for bus_id in range(35):
+            nursery.start_soon(
+                send_updates,
+                f'ws://{options.host}:{options.port}',
+                receive_channel
+            )
+        for counter, route in enumerate(load_routes(), start=1):
+            if counter > options.routes_number:
+                break
+            for bus_id in range(1, options.buses_per_route + 1):
                 nursery.start_soon(
                     run_bus,
                     route,
-                    bus_id,
+                    f'{options.emulator_id}-{bus_id}',
                     random.choice(send_channels),
                 )
 

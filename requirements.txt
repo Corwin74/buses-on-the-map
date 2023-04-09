@@ -1,1 +1,3 @@
 trio-websocket
+ConfigArgParse
+python-dotenv
