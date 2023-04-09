@@ -13,6 +13,7 @@ LISTEN_BUSES_COORD_PORT = 8080
 LISTEN_BROWSERS_PORT = 8000
 
 buses = {}
+ctrl = {}
 
 
 async def talk_to_browser(request):
@@ -43,11 +44,11 @@ async def talk_to_browser(request):
 
 
 async def buses_server(request):
-
     web_socket = await request.accept()
     while True:
         try:
             message = json.loads(await web_socket.get_message())
+            # print(len(message))
             for bus in message:
                 bus_id = bus['busId']
                 buses[bus_id] = {
@@ -55,7 +56,9 @@ async def buses_server(request):
                     'lng': bus['lng'],
                     'route': bus['route'],
                 }
+                ctrl[bus_id] = 1
             await web_socket.send_message('OK')
+            # print(ctrl)
         except ConnectionClosed:
             break
 
@@ -81,7 +84,7 @@ listen_browsers_ws = partial(
 async def main():
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.DEBUG,
+        level=logging.INFO,
         datefmt='%Y-%m-%d %H:%M:%S',
     )
     async with trio.open_nursery() as nursery:

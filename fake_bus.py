@@ -35,34 +35,34 @@ async def run_bus(route, bus_id, send_channel):
                 "lng": point[1],
                 "route": route['name']
         }
-        send_channel.send_nowait(message)
-        await trio.sleep(SEND_BUS_COORD_DELAY)
+        await send_channel.send(message)
 
 
 async def send_updates(server_address, receive_channel):
-    message = []
-    async with open_websocket_url(server_address) as ws:
-        while True:
-            try:
-                with trio.move_on_after(1):
-                    messages_counter = 0
-                    while True:
-                        value = receive_channel.receive_nowait()
-                        message.append(value)
-                        messages_counter += 1
-                        await trio.sleep(0)
-                await ws.send_message(
-                    json.dumps(message, ensure_ascii=True)
-                )
-                logger.debug('%s items send', messages_counter)
-                message = []
-            except trio.WouldBlock:
-                logger.debug('Dry channel at %s', messages_counter)
-                await ws.send_message(
-                    json.dumps(message, ensure_ascii=True)
-                )
-                await trio.sleep(READ_CHANNEL_DELAY)
-                message = []
+    try:
+        async with open_websocket_url(server_address) as ws:
+            while True:
+                try:
+                    with trio.move_on_after(1):
+                        messages_counter = 0
+                        message = []
+                        while True:
+                            value = receive_channel.receive_nowait()
+                            message.append(value)
+                            messages_counter += 1
+                            await trio.sleep(0)
+                    await ws.send_message(
+                        json.dumps(message, ensure_ascii=True)
+                    )
+                    logger.debug('%s items send', messages_counter)
+                except trio.WouldBlock:
+                    logger.debug('Dry channel at %s', messages_counter)
+                    await ws.send_message(
+                        json.dumps(message, ensure_ascii=True)
+                    )
+                    await trio.sleep(READ_CHANNEL_DELAY)
+    except:
+        print('Mama')
 
 
 async def main():
@@ -82,7 +82,7 @@ async def main():
     )
     parser.add(
         '-r',
-        required=True,
+        required=False,
         type=int,
         help='routes number',
         env_var='ROUTES_NUMBER',
@@ -155,7 +155,6 @@ async def main():
         options.port,
         options.websockets_number,
     )
-
     async with trio.open_nursery() as nursery:
         send_channels = []
         receive_channels = []
@@ -171,7 +170,7 @@ async def main():
                 receive_channel
             )
         for counter, route in enumerate(load_routes(), start=1):
-            if counter > options.routes_number:
+            if options.routes_number and counter > options.routes_number:
                 break
             for bus_id in range(1, options.buses_per_route + 1):
                 nursery.start_soon(
