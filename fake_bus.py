@@ -6,7 +6,7 @@ from itertools import cycle, islice
 import configargparse
 import dotenv
 import trio
-from trio_websocket import open_websocket_url
+from trio_websocket import open_websocket_url, HandshakeError, ConnectionClosed
 
 
 logger = logging.getLogger(__file__)
@@ -29,40 +29,51 @@ async def run_bus(route, bus_id, send_channel):
     lenght_route = len(route_points)
     random_start_point = random.randint(1, lenght_route)
     for point in islice(cycle_route, random_start_point, None):
-        message = {
+        bus_geopoint = {
                 "busId": f"{route['name']}-{bus_id}",
                 "lat": point[0],
                 "lng": point[1],
                 "route": route['name']
         }
-        await send_channel.send(message)
+        await send_channel.send(bus_geopoint)
 
 
 async def send_updates(server_address, receive_channel):
-    try:
-        async with open_websocket_url(server_address) as ws:
-            while True:
-                try:
-                    with trio.move_on_after(1):
-                        messages_counter = 0
-                        message = []
-                        while True:
-                            value = receive_channel.receive_nowait()
-                            message.append(value)
-                            messages_counter += 1
-                            await trio.sleep(0)
-                    await ws.send_message(
-                        json.dumps(message, ensure_ascii=True)
-                    )
-                    logger.debug('%s items send', messages_counter)
-                except trio.WouldBlock:
-                    logger.debug('Dry channel at %s', messages_counter)
-                    await ws.send_message(
-                        json.dumps(message, ensure_ascii=True)
-                    )
-                    await trio.sleep(READ_CHANNEL_DELAY)
-    except:
-        print('Mama')
+    while True:
+        try:
+            async with open_websocket_url(server_address) as ws:
+                while True:
+                    try:
+                        with trio.move_on_after(1):
+                            buses_counter = 0
+                            buses_geopoints = []
+                            while True:
+                                bus_geopoint = receive_channel.receive_nowait()
+                                buses_geopoints.append(bus_geopoint)
+                                buses_counter += 1
+                                await trio.sleep(0)
+                        message = {
+                            'msgType': 'Buses',
+                            'buses': buses_geopoints,
+                        }
+                        await ws.send_message(
+                            json.dumps(message, ensure_ascii=True)
+                        )
+                        logger.debug('%s buses send', buses_counter)
+                    except trio.WouldBlock:
+                        logger.debug('Dry channel at %s', buses_counter)
+                        await ws.send_message(
+                            json.dumps(buses_geopoints, ensure_ascii=True)
+                        )
+                        await trio.sleep(READ_CHANNEL_DELAY)
+        except HandshakeError:
+            logger.warning('Handshake error!')
+            await trio.sleep(5)
+            logger.debug('Trying reconnect')
+        except ConnectionClosed:
+            logger.warning('Lost connection!')
+            await trio.sleep(5)
+            logger.debug('Trying reconnect')
 
 
 async def main():
@@ -155,30 +166,35 @@ async def main():
         options.port,
         options.websockets_number,
     )
-    async with trio.open_nursery() as nursery:
-        send_channels = []
-        receive_channels = []
-        for _ in range(options.websockets_number):
-            send_channel, receive_channel = trio.open_memory_channel(
-                CHANNEL_BUFFER_SIZE,
-            )
-            send_channels.append(send_channel)
-            receive_channels.append(receive_channel)
-            nursery.start_soon(
-                send_updates,
-                f'ws://{options.host}:{options.port}',
-                receive_channel
-            )
-        for counter, route in enumerate(load_routes(), start=1):
-            if options.routes_number and counter > options.routes_number:
-                break
-            for bus_id in range(1, options.buses_per_route + 1):
-                nursery.start_soon(
-                    run_bus,
-                    route,
-                    f'{options.emulator_id}-{bus_id}',
-                    random.choice(send_channels),
+    try:
+        async with trio.open_nursery() as nursery:
+            send_channels = []
+            receive_channels = []
+            for _ in range(options.websockets_number):
+                send_channel, receive_channel = trio.open_memory_channel(
+                    CHANNEL_BUFFER_SIZE,
                 )
+                send_channels.append(send_channel)
+                receive_channels.append(receive_channel)
+                nursery.start_soon(
+                    send_updates,
+                    f'ws://{options.host}:{options.port}',
+                    receive_channel
+                )
+            for counter, route in enumerate(load_routes(), start=1):
+                if options.routes_number and counter > options.routes_number:
+                    break
+                for bus_id in range(1, options.buses_per_route + 1):
+                    nursery.start_soon(
+                        run_bus,
+                        route,
+                        f'{options.emulator_id}-{bus_id}',
+                        random.choice(send_channels),
+                    )
+    except HandshakeError:
+        print('Main')
 
-
-trio.run(main)
+try:
+    trio.run(main)
+except KeyboardInterrupt:
+    logger.info('Exit by Ctrl-C!')
