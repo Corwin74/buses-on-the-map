@@ -16,40 +16,42 @@ LISTEN_BROWSERS_PORT = 8000
 buses = {}
 
 
-@dataclass
 class Bus:
-    bus_id: str
-    lat: float
-    lng: float
-    route: str
+    def __init__(self, bus):
+        self.bus_id = bus['busId']
+        self.lat = bus['lat']
+        self.lng = bus['lng']
+        self.route = bus['route']
+
+    def to_dict(self):
+        return {
+            'busId': self.bus_id,
+            'lat': self.lat,
+            'lng': self.lng,
+            'route': self.route
+        }
 
 
 class WindowBound:
-
     def __init__(self, bound):
         self.east_lng = bound['east_lng']
         self.north_lat = bound['north_lat']
         self.south_lat = bound['south_lat']
         self.west_lng = bound['west_lng']
 
-    def is_inside(self, lat, lng):
-        if not self.south_lat < lat < self.north_lat:
+    def is_inside(self, bus):
+        if not self.south_lat < bus.lat < self.north_lat:
             return False
-        if not self.west_lng < lng < self.east_lng:
+        if not self.west_lng < bus.lng < self.east_lng:
             return False
         return True
 
 
 async def send_buses(ws, current_bound):
     visible_buses = []
-    for bus, bus_details in buses.items():
-        if current_bound.is_inside(bus_details['lat'], bus_details['lng']):
-            visible_buses.append({
-                'busId': bus,
-                'lat': bus_details['lat'],
-                'lng': bus_details['lng'],
-                'route': bus_details['route'],
-            })
+    for _, bus in buses.items():
+        if current_bound.is_inside(bus):
+            visible_buses.append(bus.to_dict())
     reply_message = {
         'msgType': 'Buses',
         'buses': visible_buses,
@@ -100,11 +102,7 @@ async def buses_server(request):
             message = json.loads(await web_socket.get_message())
             for bus in message['buses']:
                 bus_id = bus['busId']
-                buses[bus_id] = {
-                    'lat': bus['lat'],
-                    'lng': bus['lng'],
-                    'route': bus['route'],
-                }
+                buses[bus_id] = Bus(bus)
             await web_socket.send_message('OK')
         except ConnectionClosed:
             break
