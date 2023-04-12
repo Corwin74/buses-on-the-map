@@ -1,4 +1,3 @@
-from dataclasses import dataclass, asdict
 import json
 import logging
 from functools import partial
@@ -46,6 +45,12 @@ class WindowBound:
             return False
         return True
 
+    def update(self, bound):
+        self.east_lng = bound['east_lng']
+        self.north_lat = bound['north_lat']
+        self.south_lat = bound['south_lat']
+        self.west_lng = bound['west_lng']
+
 
 async def send_buses(ws, current_bound):
     visible_buses = []
@@ -61,36 +66,32 @@ async def send_buses(ws, current_bound):
     )
 
 
-async def listen_browsers(ws):
+async def listen_browser(ws, shared_init_bound):
     while True:
         message = json.loads(await ws.get_message())
         logger.debug('Recive message: %s', message)
-        await send_buses(ws, WindowBound(message['data']))
+        shared_init_bound.update(message['data'])
 
 
-async def talk_to_browser(request):
-    web_socket = await request.accept()
+async def talk_to_browser(ws, shared_init_bound):
+    while True:
+        await send_buses(ws, shared_init_bound)
+        await trio.sleep(1)
+
+
+async def browser_server(request):
+    ws = await request.accept()
     logger.debug('Open connection on browsers port')
     try:
         async with trio.open_nursery() as nursery:
-            nursery.start_soon(listen_browsers, web_socket)
-            while False:
-                buses_coord_snapshot = []
-                for bus, bus_details in buses.items():
-                    buses_coord_snapshot.append({
-                        'busId': bus,
-                        'lat': bus_details['lat'],
-                        'lng': bus_details['lng'],
-                        'route': bus_details['route'],
-                    })
-                reply_message = {
-                    'msgType': 'Buses',
-                    'buses': buses_coord_snapshot,
-                }
-                await web_socket.send_message(
-                    json.dumps(reply_message, ensure_ascii=True)
-                )
-                await trio.sleep(1)
+            shared_init_bound = WindowBound({
+                'east_lng': 0,
+                'north_lat': 0,
+                'south_lat': 0,
+                'west_lng': 0,
+            })
+            nursery.start_soon(listen_browser, ws, shared_init_bound)
+            nursery.start_soon(talk_to_browser, ws, shared_init_bound)
     except ConnectionClosed:
         logger.debug('Close connection on browsers port')
 
@@ -119,7 +120,7 @@ listen_buses_coord_ws = partial(
 
 listen_browsers_ws = partial(
     serve_websocket,
-    talk_to_browser,
+    browser_server,
     HOST,
     LISTEN_BROWSERS_PORT,
     ssl_context=None,

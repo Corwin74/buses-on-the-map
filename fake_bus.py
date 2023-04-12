@@ -36,6 +36,7 @@ async def run_bus(route, bus_id, send_channel):
                 "route": route['name']
         }
         await send_channel.send(bus_geopoint)
+        await trio.sleep(1)
 
 
 async def send_updates(server_address, receive_channel):
@@ -62,9 +63,14 @@ async def send_updates(server_address, receive_channel):
                         logger.debug('%s buses send', buses_counter)
                     except trio.WouldBlock:
                         logger.debug('Dry channel at %s', buses_counter)
+                        message = {
+                            'msgType': 'Buses',
+                            'buses': buses_geopoints,
+                        }
                         await ws.send_message(
-                            json.dumps(buses_geopoints, ensure_ascii=True)
+                            json.dumps(message, ensure_ascii=True)
                         )
+                        logger.debug('%s buses send', buses_counter)
                         await trio.sleep(READ_CHANNEL_DELAY)
         except HandshakeError:
             logger.warning('Handshake error!')
