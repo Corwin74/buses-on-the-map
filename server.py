@@ -5,6 +5,8 @@ import configargparse
 import dotenv
 import trio
 from trio_websocket import serve_websocket, ConnectionClosed
+from jsonschema import validate, exceptions
+from schema import bound_message_schema
 
 # pylint: disable=C0103
 
@@ -69,9 +71,19 @@ async def send_buses(ws, current_bound):
 
 async def listen_browser(ws, shared_init_bound):
     while True:
-        message = json.loads(await ws.get_message())
-        logger.debug('Recive message: %s', message)
-        shared_init_bound.update(message['data'])
+        error_message = json.loads(await ws.get_message())
+        logger.debug('Recive message: %s', error_message)
+        try:
+            validate(error_message, bound_message_schema)
+            logger.debug('New bound message is valid. Processing...')
+            shared_init_bound.update(error_message['data'])
+        except exceptions.ValidationError as exc:
+            logger.error(exc.message)
+            error_message = {
+                    'msgType': 'Errors',
+                    'errors': [exc.message],
+            }
+            await ws.send_message(json.dumps(error_message))
 
 
 async def talk_to_browser(ws, shared_init_bound):
