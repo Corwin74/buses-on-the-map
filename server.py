@@ -6,6 +6,7 @@ import dotenv
 import trio
 from trio_websocket import serve_websocket, ConnectionClosed
 
+# pylint: disable=C0103
 
 logger = logging.getLogger(__file__)
 HOST = '127.0.0.1'
@@ -129,15 +130,61 @@ listen_browsers_ws = partial(
 
 
 async def main():
+    dotenv.load_dotenv()
+    parser = configargparse.ArgParser()
+    parser.add(
+        '-host',
+        required=False,
+        help='host to connection',
+        env_var='HOST',
+        default='127.0.0.1'
+    )
+    parser.add(
+        '-browser_port',
+        required=False,
+        help='host to connection',
+        env_var='BROWSER_PORT',
+        default='8000'
+    )
+    parser.add(
+        '-bus_port',
+        required=False,
+        help='buses server port',
+        env_var='BUSES_SERVER_PORT',
+        default='8080',
+    )
+    parser.add(
+        '-v',
+        required=False,
+        action='count',
+        dest='verbose',
+        default=0,
+    )
+    options = parser.parse_args()
+
+    if options.verbose == 0:
+        logging_level = logging.ERROR
+    elif options.verbose == 1:
+        logging_level = logging.WARNING
+    elif options.verbose == 2:
+        logging_level = logging.INFO
+    else:
+        logging_level = logging.DEBUG
+
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.INFO,
+        level=logging_level,
         datefmt='%Y-%m-%d %H:%M:%S',
     )
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging_level)
+
+    logger.debug(options)
     async with trio.open_nursery() as nursery:
         nursery.start_soon(listen_buses_coord_ws)
         nursery.start_soon(listen_browsers_ws)
 
 
-trio.run(main)
+try:
+    trio.run(main)
+except KeyboardInterrupt:
+    logger.debug('Exit by Ctrl-C!')

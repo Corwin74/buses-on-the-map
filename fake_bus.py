@@ -8,6 +8,7 @@ import dotenv
 import trio
 from trio_websocket import open_websocket_url, HandshakeError, ConnectionClosed
 
+# pylint: disable=C0103
 
 logger = logging.getLogger(__file__)
 READ_CHANNEL_DELAY = 1
@@ -87,15 +88,17 @@ async def main():
     parser = configargparse.ArgParser()
     parser.add(
         '-host',
-        required=True,
+        required=False,
         help='host to connection',
         env_var='HOST',
+        default='127.0.0.1',
     )
     parser.add(
         '-port',
-        required=True,
+        required=False,
         help='buses server port',
         env_var='BUSES_SERVER_PORT',
+        default='8080',
     )
     parser.add(
         '-r',
@@ -107,11 +110,12 @@ async def main():
     )
     parser.add(
         '-b',
-        required=True,
+        required=False,
         type=int,
         help='buses_per_route',
         env_var='BUSES_PER_ROUTE',
         dest='buses_per_route',
+        default=1,
     )
     parser.add(
         '-t',
@@ -203,4 +207,4 @@ async def main():
 try:
     trio.run(main)
 except KeyboardInterrupt:
-    logger.info('Exit by Ctrl-C!')
+    logger.debug('Exit by Ctrl-C!')
