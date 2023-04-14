@@ -1,3 +1,4 @@
 trio-websocket
 ConfigArgParse
 python-dotenv
+pytest-trio

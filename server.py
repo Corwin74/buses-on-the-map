@@ -4,8 +4,14 @@ from functools import partial
 import configargparse
 import dotenv
 import trio
-from trio_websocket import serve_websocket, ConnectionClosed, open_websocket_url
+from trio_websocket import (
+    serve_websocket,
+    ConnectionClosed,
+    open_websocket_url
+)
+import pytest
 import validator
+import test_data
 
 # pylint: disable=C0103
 
@@ -52,9 +58,6 @@ class WindowBound:
         self.north_lat = bound['north_lat']
         self.south_lat = bound['south_lat']
         self.west_lng = bound['west_lng']
-
-
-
 
 
 async def send_buses(ws, current_bound):
@@ -157,15 +160,38 @@ listen_browsers_ws = partial(
 )
 
 
-async def test_buses_processing():
-    async with trio.open_nursery() as nursery:
-        nursery.start_soon(listen_buses_coord_ws)
-        await trio.sleep(0.1)
-        async with open_websocket_url(f'ws://{HOST}:{LISTEN_BUSES_COORD_PORT}') as ws:
-            await ws.send_message(json.dumps("dd"))
-            await trio.sleep(1)
-            print(await ws.get_message())
-        
+@pytest.fixture
+async def buses_server_client(nursery):
+    await nursery.start(
+        partial(
+            serve_websocket,
+            buses_server,
+            '127.0.0.1',
+            8081,
+            ssl_context=None
+        )
+    )
+    async with open_websocket_url('ws://127.0.0.1:8081') as ws:
+        yield ws
+
+
+# pylint: disable=W0621
+async def test_final(buses_server_client):
+    await buses_server_client.send_message(test_data.TEST_MESSAGE_1)
+    assert await buses_server_client.get_message() == test_data.TEST_REPLY_1
+
+    await buses_server_client.send_message(test_data.TEST_MESSAGE_2)
+    assert await buses_server_client.get_message() == test_data.TEST_REPLY_2
+
+    await buses_server_client.send_message(test_data.TEST_MESSAGE_3)
+    assert await buses_server_client.get_message() == test_data.TEST_REPLY_3
+
+    await buses_server_client.send_message(test_data.TEST_MESSAGE_4)
+    assert await buses_server_client.get_message() == test_data.TEST_REPLY_4
+
+    await buses_server_client.send_message(test_data.TEST_MESSAGE_5)
+    assert await buses_server_client.get_message() == test_data.TEST_REPLY_5
+# pylint: enable=W0621
 
 
 async def main():
@@ -222,8 +248,8 @@ async def main():
         nursery.start_soon(listen_buses_coord_ws)
         nursery.start_soon(listen_browsers_ws)
 
-
-try:
-    trio.run(test_buses_processing)
-except KeyboardInterrupt:
-    logger.debug('Exit by Ctrl-C!')
+if __name__ == '__main__':
+    try:
+        trio.run(main)
+    except KeyboardInterrupt:
+        logger.debug('Exit by Ctrl-C!')
