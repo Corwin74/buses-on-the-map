@@ -62,6 +62,8 @@ async def send_updates(server_address, receive_channel):
                             json.dumps(message, ensure_ascii=True)
                         )
                         logger.debug('%s buses send', buses_counter)
+                        reply_message = await ws.get_message()
+                        logger.debug(reply_message)
                     except trio.WouldBlock:
                         logger.debug('Dry channel at %s', buses_counter)
                         message = {
@@ -72,6 +74,8 @@ async def send_updates(server_address, receive_channel):
                             json.dumps(message, ensure_ascii=True)
                         )
                         logger.debug('%s buses send', buses_counter)
+                        reply_message = await ws.get_message()
+                        logger.debug(reply_message)
                         await trio.sleep(READ_CHANNEL_DELAY)
         except HandshakeError:
             logger.warning('Handshake error!')

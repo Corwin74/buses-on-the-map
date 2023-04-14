@@ -4,9 +4,8 @@ from functools import partial
 import configargparse
 import dotenv
 import trio
-from trio_websocket import serve_websocket, ConnectionClosed
-from jsonschema import validate, exceptions
-from schema import bound_message_schema
+from trio_websocket import serve_websocket, ConnectionClosed, open_websocket_url
+import validator
 
 # pylint: disable=C0103
 
@@ -55,6 +54,9 @@ class WindowBound:
         self.west_lng = bound['west_lng']
 
 
+
+
+
 async def send_buses(ws, current_bound):
     visible_buses = []
     for _, bus in buses.items():
@@ -71,19 +73,21 @@ async def send_buses(ws, current_bound):
 
 async def listen_browser(ws, shared_init_bound):
     while True:
-        error_message = json.loads(await ws.get_message())
-        logger.debug('Recive message: %s', error_message)
-        try:
-            validate(error_message, bound_message_schema)
-            logger.debug('New bound message is valid. Processing...')
-            shared_init_bound.update(error_message['data'])
-        except exceptions.ValidationError as exc:
-            logger.error(exc.message)
-            error_message = {
+        bound_message = json.loads(await ws.get_message())
+        logger.debug('Recive message: %s', bound_message)
+        if error_messages := validator.validate_message(
+            bound_message,
+            validator.BOUND_MESSAGE_SCHEMA
+        ):
+            reply_message = {
                     'msgType': 'Errors',
-                    'errors': [exc.message],
+                    'errors': error_messages,
             }
-            await ws.send_message(json.dumps(error_message))
+            await ws.send_message(json.dumps(reply_message))
+            logger.error(error_messages)
+        else:
+            logger.debug('New bound message is valid. Processing...')
+            shared_init_bound.update(bound_message['data'])
 
 
 async def talk_to_browser(ws, shared_init_bound):
@@ -113,11 +117,23 @@ async def buses_server(request):
     web_socket = await request.accept()
     while True:
         try:
-            message = json.loads(await web_socket.get_message())
-            for bus in message['buses']:
-                bus_id = bus['busId']
-                buses[bus_id] = Bus(bus)
-            await web_socket.send_message('OK')
+            bus_message = json.loads(await web_socket.get_message())
+            if error_messages := validator.validate_message(
+                bus_message,
+                validator.BUS_MESSAGE_SCHEMA
+            ):
+                reply_message = {
+                        'msgType': 'Errors',
+                        'errors': error_messages,
+                }
+                await web_socket.send_message(
+                    json.dumps(reply_message)
+                )
+            else:
+                for bus in bus_message['buses']:
+                    bus_id = bus['busId']
+                    buses[bus_id] = Bus(bus)
+                await web_socket.send_message('OK')
         except ConnectionClosed:
             break
 
@@ -139,6 +155,17 @@ listen_browsers_ws = partial(
     ssl_context=None,
     max_message_size=10485760,
 )
+
+
+async def test_buses_processing():
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(listen_buses_coord_ws)
+        await trio.sleep(0.1)
+        async with open_websocket_url(f'ws://{HOST}:{LISTEN_BUSES_COORD_PORT}') as ws:
+            await ws.send_message(json.dumps("dd"))
+            await trio.sleep(1)
+            print(await ws.get_message())
+        
 
 
 async def main():
@@ -197,6 +224,6 @@ async def main():
 
 
 try:
-    trio.run(main)
+    trio.run(test_buses_processing)
 except KeyboardInterrupt:
     logger.debug('Exit by Ctrl-C!')
