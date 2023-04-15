@@ -102,5 +102,4 @@ def validate_message(message, schema):
         for error in errors:
             error_messages.append(error.message)
         return error_messages
-    else:
-        return None
+    return None

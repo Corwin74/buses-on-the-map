@@ -95,8 +95,8 @@ async def listen_browser(ws, shared_init_bound):
 
 async def talk_to_browser(ws, shared_init_bound):
     while True:
-        await send_buses(ws, shared_init_bound)
         await trio.sleep(1)
+        await send_buses(ws, shared_init_bound)
 
 
 async def browser_server(request):
@@ -117,10 +117,10 @@ async def browser_server(request):
 
 
 async def buses_server(request):
-    web_socket = await request.accept()
+    ws = await request.accept()
     while True:
         try:
-            bus_message = json.loads(await web_socket.get_message())
+            bus_message = json.loads(await ws.get_message())
             if error_messages := validator.validate_message(
                 bus_message,
                 validator.BUS_MESSAGE_SCHEMA
@@ -129,14 +129,14 @@ async def buses_server(request):
                         'msgType': 'Errors',
                         'errors': error_messages,
                 }
-                await web_socket.send_message(
+                await ws.send_message(
                     json.dumps(reply_message)
                 )
             else:
                 for bus in bus_message['buses']:
                     bus_id = bus['busId']
                     buses[bus_id] = Bus(bus)
-                await web_socket.send_message('OK')
+                await ws.send_message('OK')
         except ConnectionClosed:
             break
 
@@ -175,13 +175,40 @@ async def buses_server_client(nursery):
         yield ws
 
 
+@pytest.fixture
+async def browser_server_client(nursery):
+    await nursery.start(
+        partial(
+            serve_websocket,
+            browser_server,
+            '127.0.0.1',
+            8001,
+            ssl_context=None
+        )
+    )
+    async with open_websocket_url('ws://127.0.0.1:8001') as ws:
+        yield ws
+
+
 # pylint: disable=W0621
-async def test_final(buses_server_client):
+async def test_buses_server(buses_server_client, browser_server_client):
     await buses_server_client.send_message(test_data.TEST_MESSAGE_1)
     assert await buses_server_client.get_message() == test_data.TEST_REPLY_1
 
+    # send correct coordinates of 2 buses
     await buses_server_client.send_message(test_data.TEST_MESSAGE_2)
     assert await buses_server_client.get_message() == test_data.TEST_REPLY_2
+
+    # send bound catch 2 buses
+    await browser_server_client.send_message(test_data.TEST_BROWSER_MESSAGE_1)
+    assert await browser_server_client.get_message() == test_data.TEST_BROWSER_REPLY_1  # noqa: E501
+
+    # send bound catch 1 bus
+    await browser_server_client.send_message(test_data.TEST_BROWSER_MESSAGE_2)
+    assert await browser_server_client.get_message() == test_data.TEST_BROWSER_REPLY_2  # noqa: E501
+
+    await browser_server_client.send_message(test_data.TEST_BROWSER_MESSAGE_3)
+    assert await browser_server_client.get_message() == test_data.TEST_BROWSER_REPLY_3  # noqa: E501
 
     await buses_server_client.send_message(test_data.TEST_MESSAGE_3)
     assert await buses_server_client.get_message() == test_data.TEST_REPLY_3
