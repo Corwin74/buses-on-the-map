@@ -60,10 +60,10 @@ class WindowBound:
         self.west_lng = bound['west_lng']
 
 
-async def send_buses(ws, current_bound):
+async def send_buses(ws, shared_bound):
     visible_buses = []
     for _, bus in buses.items():
-        if current_bound.is_inside(bus):
+        if shared_bound.is_inside(bus):
             visible_buses.append(bus.to_dict())
     reply_message = {
         'msgType': 'Buses',
@@ -74,7 +74,7 @@ async def send_buses(ws, current_bound):
     )
 
 
-async def listen_browser(ws, shared_init_bound):
+async def listen_browser(ws, shared_bound):
     while True:
         bound_message = json.loads(await ws.get_message())
         logger.debug('Recive message: %s', bound_message)
@@ -90,13 +90,14 @@ async def listen_browser(ws, shared_init_bound):
             logger.error(error_messages)
         else:
             logger.debug('New bound message is valid. Processing...')
-            shared_init_bound.update(bound_message['data'])
+            shared_bound.update(bound_message['data'])
+            # This update will affect function talk_to_browser
 
 
-async def talk_to_browser(ws, shared_init_bound):
+async def talk_to_browser(ws, shared_bound):
     while True:
         await trio.sleep(1)
-        await send_buses(ws, shared_init_bound)
+        await send_buses(ws, shared_bound)
 
 
 async def browser_server(request):
@@ -104,14 +105,14 @@ async def browser_server(request):
     logger.debug('Open connection on browsers port')
     try:
         async with trio.open_nursery() as nursery:
-            shared_init_bound = WindowBound({
+            shared_bound = WindowBound({
                 'east_lng': 0,
                 'north_lat': 0,
                 'south_lat': 0,
                 'west_lng': 0,
             })
-            nursery.start_soon(listen_browser, ws, shared_init_bound)
-            nursery.start_soon(talk_to_browser, ws, shared_init_bound)
+            nursery.start_soon(listen_browser, ws, shared_bound)
+            nursery.start_soon(talk_to_browser, ws, shared_bound)
     except ConnectionClosed:
         logger.debug('Close connection on browsers port')
 
@@ -191,7 +192,7 @@ async def browser_server_client(nursery):
 
 
 # pylint: disable=W0621
-async def test_buses_server(buses_server_client, browser_server_client):
+async def test_servers(buses_server_client, browser_server_client):
     await buses_server_client.send_message(test_data.TEST_MESSAGE_1)
     assert await buses_server_client.get_message() == test_data.TEST_REPLY_1
 

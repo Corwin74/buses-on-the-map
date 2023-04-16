@@ -12,8 +12,8 @@ from trio_websocket import open_websocket_url, HandshakeError, ConnectionClosed
 
 logger = logging.getLogger(__file__)
 READ_CHANNEL_DELAY = 1
-SEND_BUS_COORD_DELAY = 2
-CHANNEL_BUFFER_SIZE = 400000
+SEND_BUS_COORD_DELAY = 1
+CHANNEL_BUFFER_SIZE = 10000
 
 
 def load_routes(directory_path='routes'):
@@ -37,7 +37,7 @@ async def run_bus(route, bus_id, send_channel):
                 "route": route['name']
         }
         await send_channel.send(bus_geopoint)
-        await trio.sleep(1)
+        await trio.sleep(SEND_BUS_COORD_DELAY)
 
 
 async def send_updates(server_address, receive_channel):
@@ -120,15 +120,6 @@ async def main():
         env_var='BUSES_PER_ROUTE',
         dest='buses_per_route',
         default=1,
-    )
-    parser.add(
-        '-t',
-        required=False,
-        type=int,
-        help='refresh timeout',
-        env_var='REFRESH_TIMEOUT',
-        dest='refresh_timeout',
-        default=2
     )
     parser.add(
         '-id',
