@@ -19,6 +19,7 @@ logger = logging.getLogger(__file__)
 HOST = '127.0.0.1'
 LISTEN_BUSES_COORD_PORT = 8080
 LISTEN_BROWSERS_PORT = 8000
+MAX_MESSAGE_SIZE = 10485760
 
 buses = {}
 
@@ -148,7 +149,7 @@ listen_buses_coord_ws = partial(
     HOST,
     LISTEN_BUSES_COORD_PORT,
     ssl_context=None,
-    max_message_size=10485760,
+    max_message_size=MAX_MESSAGE_SIZE,
 )
 
 listen_browsers_ws = partial(
@@ -157,7 +158,7 @@ listen_browsers_ws = partial(
     HOST,
     LISTEN_BROWSERS_PORT,
     ssl_context=None,
-    max_message_size=10485760,
+    max_message_size=MAX_MESSAGE_SIZE,
 )
 
 
