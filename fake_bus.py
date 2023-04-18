@@ -197,7 +197,9 @@ async def main():
     except HandshakeError:
         print('Main')
 
-try:
-    trio.run(main)
-except KeyboardInterrupt:
-    logger.debug('Exit by Ctrl-C!')
+
+if __name__ == '__main__':
+    try:
+        trio.run(main)
+    except KeyboardInterrupt:
+        logger.debug('Exit by Ctrl-C!')
