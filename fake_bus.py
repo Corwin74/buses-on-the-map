@@ -1,6 +1,6 @@
 import json
 import logging
-import os
+from pathlib import Path
 import random
 from itertools import cycle, islice
 import configargparse
@@ -17,11 +17,9 @@ CHANNEL_BUFFER_SIZE = 10000
 
 
 def load_routes(directory_path='routes'):
-    for filename in os.listdir(directory_path):
-        if filename.endswith(".json"):
-            filepath = os.path.join(directory_path, filename)
-            with open(filepath, 'r', encoding='utf8') as file:
-                yield json.load(file)
+    for filepath in Path(directory_path).glob("**/*.json"):
+        with open(filepath, 'r', encoding='utf-8') as file:
+            yield json.load(file)
 
 
 async def run_bus(route, bus_id, send_channel):
